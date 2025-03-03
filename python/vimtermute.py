@@ -11,6 +11,14 @@ import vim # pylint: disable=import-error
 CHAT_BUFFER_NAME = "[VimtermuteChat]"
 ASK_BUFFER_NAME = "[VimtermuteAsk]"
 
+CODE_SYSTEM_PROMPT = """
+You are an AI programming assistant.
+
+When asked to generate code, output only those parts of the code that are
+relevant to the user's request and need to be modified. Do not output
+entire files unless asked to do so.
+"""
+
 def chat():
     if getattr(chat, "buffer", None) is None:
         vim.command(f"split {CHAT_BUFFER_NAME}")
@@ -21,7 +29,7 @@ def chat():
         vim.command("setlocal filetype=markdown")
         vim.command("setlocal conceallevel=2")
         vim.command("nnoremap <buffer> i :python3 vimtermute.ask()<CR>")
-        vim.command("nnoremap <buffer> <leader>c :python3 vimtermute.clear()<CR>")
+        vim.command("nnoremap <buffer> <leader>cl :python3 vimtermute.clear()<CR>")
 
         chat.buffer = vim.current.buffer
         chat.history = []
@@ -59,7 +67,7 @@ def ask():
 def ask_finish():
     ask.finish = None
     prompt_raw = "\n".join(vim.current.buffer[:]).strip()
-    prompt = compose_prompt(prompt_raw)
+    prompt, system = compose_prompt(prompt_raw)
     vim.command("bwipeout")
 
     # If the prompt is empty, do nothing
@@ -95,6 +103,7 @@ def ask_finish():
     # Call the model
     response = call_gemini({
         "messages": messages,
+        "system": system,
     })
 
     # Append the prompt and response to the chat history
@@ -122,6 +131,7 @@ def ask_finish():
     vim.command("normal G")
 
 def compose_prompt(raw_prompt):
+    system = []
     prompt = []
     for line in raw_prompt.split("\n"):
         if line.startswith("@"):
@@ -164,9 +174,16 @@ def compose_prompt(raw_prompt):
                     raise RuntimeError("Git command failed") from ex
             else:
                 raise ValueError("Invalid @ directive")
+        elif line.startswith("/"):
+            if line.startswith("/code"):
+                system.extend(CODE_SYSTEM_PROMPT.strip().split("\n"))
+            else:
+                raise ValueError("Invalid / directive")
         else:
             prompt.append(line)
-    return "\n".join(prompt)
+    return \
+        "\n".join(prompt), \
+        "\n".join(system) if system else None
 
 def clear():
     chat.buffer.options["modifiable"] = True
@@ -211,7 +228,7 @@ def call_gemini(call):
     data = {
         "contents": contents,
     }
-    if "system" in call:
+    if "system" in call and call["system"]:
         data["system_instruction"] = {
             "parts": [{
                 "text": call["system"],
