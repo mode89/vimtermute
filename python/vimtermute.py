@@ -177,7 +177,7 @@ def compose_prompt(raw_prompt):
                 except subprocess.CalledProcessError as ex:
                     raise RuntimeError("Git command failed") from ex
             else:
-                raise ValueError("Invalid @ directive")
+                raise ValueError(f"Invalid @ directive: {line}")
         elif line.startswith("/"):
             if line.startswith("/code"):
                 system.extend(CODE_SYSTEM_PROMPT.strip().split("\n"))
@@ -185,7 +185,7 @@ def compose_prompt(raw_prompt):
                 system.append("You are an AI programming assistant.")
                 prompt.extend(COMMIT_PROMPT.strip().split("\n"))
             else:
-                raise ValueError("Invalid / directive")
+                raise ValueError(f"Invalid / directive: {line}")
         else:
             prompt.append(line)
     return \
