@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 import urllib.request
 import urllib.parse
 
@@ -141,6 +142,26 @@ def compose_prompt(raw_prompt):
                         "```",
                         "",
                     ] + prompt
+            elif line.startswith("@git:staged"):
+                try:
+                    diff = subprocess.check_output(
+                        ["git", "diff", "--staged"],
+                        universal_newlines=True
+                    ).strip()
+                    if diff:
+                        prompt = [
+                            "Here are the currently staged changes:",
+                            "",
+                            "```diff",
+                            diff,
+                            "```",
+                            "",
+                        ] + prompt
+                    else:
+                        raise ValueError(
+                            "Using @git:staged, but no changes staged")
+                except subprocess.CalledProcessError as ex:
+                    raise RuntimeError("Git command failed") from ex
             else:
                 raise ValueError("Invalid @ directive")
         else:
