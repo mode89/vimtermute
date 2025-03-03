@@ -21,6 +21,9 @@ entire files unless asked to do so.
 
 COMMIT_PROMPT = """
 Write commit message for the change following the Conventional Commits format.
+Tell me what the change does, not how it does it.
+Explain motivation for the change and how it addresses the issue.
+Use imperatiive mood.
 """
 
 def chat():
