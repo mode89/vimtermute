@@ -26,19 +26,25 @@ Explain motivation for the change and how it addresses the issue.
 Use imperatiive mood.
 """
 
+CHAT_INTRO = """
+# This is the Vimtermute chat window. Press 'i' to enter a prompt.
+"""
+
+
 def chat():
     if getattr(chat, "buffer", None) is None:
         vim.command(f"split {CHAT_BUFFER_NAME}")
         vim.command("setlocal buftype=nofile")
         vim.command("setlocal bufhidden=hide")
         vim.command("setlocal noswapfile")
-        vim.command("setlocal nomodifiable")
         vim.command("setlocal filetype=markdown")
         vim.command("setlocal conceallevel=2")
         vim.command("nnoremap <buffer> i :python3 vimtermute.ask()<CR>")
         vim.command("nnoremap <buffer> <leader>cl :python3 vimtermute.clear()<CR>")
 
         chat.buffer = vim.current.buffer
+        chat.buffer[:] = CHAT_INTRO.split("\n")
+        chat.buffer.options["modifiable"] = False
         chat.history = []
     else:
         window = buffer_window(chat.buffer.number)
@@ -198,7 +204,7 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
 
 def clear():
     chat.buffer.options["modifiable"] = True
-    chat.buffer[:] = []
+    chat.buffer[:] = CHAT_INTRO.split("\n")
     chat.buffer.options["modifiable"] = False
 
     # Dump the chat log to a file
