@@ -19,6 +19,10 @@ relevant to the user's request and need to be modified. Do not output
 entire files unless asked to do so.
 """
 
+COMMIT_PROMPT = """
+Write commit message for the change following the Conventional Commits format.
+"""
+
 def chat():
     if getattr(chat, "buffer", None) is None:
         vim.command(f"split {CHAT_BUFFER_NAME}")
@@ -177,6 +181,9 @@ def compose_prompt(raw_prompt):
         elif line.startswith("/"):
             if line.startswith("/code"):
                 system.extend(CODE_SYSTEM_PROMPT.strip().split("\n"))
+            elif line.startswith("/commit"):
+                system.append("You are an AI programming assistant.")
+                prompt.extend(COMMIT_PROMPT.strip().split("\n"))
             else:
                 raise ValueError("Invalid / directive")
         else:
