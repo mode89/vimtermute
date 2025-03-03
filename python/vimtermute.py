@@ -124,7 +124,7 @@ def ask_finish():
     for line in prompt_raw.split("\n"):
         chat.buffer.append(line)
     chat.buffer.append("")
-    chat.buffer.append("#### Vimtermute " + "-" * 63)
+    chat.buffer.append("#### Vimtermute " + "-" * 59)
     chat.buffer.append("")
     for line in response.split("\n"):
         chat.buffer.append(line)
