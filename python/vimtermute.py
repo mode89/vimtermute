@@ -197,6 +197,18 @@ def clear():
     chat.buffer.options["modifiable"] = True
     chat.buffer[:] = []
     chat.buffer.options["modifiable"] = False
+
+    # Dump the chat log to a file
+    if hasattr(chat, "history") and chat.history:
+        with open(".vimtermute.log", "a", encoding="utf-8") as log:
+            log.write("*" * 80 + "\n\n")
+            for entry in chat.history:
+                log.write("--- User " + "-" * 65 + "\n\n")
+                log.write(entry["prompt_raw"] + "\n\n")
+                log.write("--- Vimtermute " + "-" * 59 + "\n\n")
+                log.write(entry["response"] + "\n\n")
+            log.write("\n")
+
     chat.history = []
 
 def visible_buffers():
