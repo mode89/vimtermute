@@ -137,6 +137,7 @@ def ask_finish():
 def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
     system = []
     prompt = []
+    preamble = []
     for line in raw_prompt.split("\n"):
         if line.startswith("@"):
             if line.startswith("@buffer"):
@@ -148,14 +149,14 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
                         "Using @buffer, but multiple buffers open")
                 else:
                     buffer = buffers[0]
-                    prompt = [
+                    preamble = preamble + [
                         "Here is the content of the current buffer:",
                         "",
                         "```",
                     ] + buffer[:] + [
                         "```",
                         "",
-                    ] + prompt
+                    ]
             elif line.startswith("@git:staged"):
                 try:
                     diff = subprocess.check_output(
@@ -163,14 +164,14 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
                         universal_newlines=True
                     ).strip()
                     if diff:
-                        prompt = [
-                            "Here are the currently staged changes:",
+                        preamble = preamble + [
+                            "Here are the changes staged for commit:",
                             "",
                             "```diff",
                             diff,
                             "```",
                             "",
-                        ] + prompt
+                        ]
                     else:
                         raise ValueError(
                             "Using @git:staged, but no changes staged")
@@ -189,7 +190,7 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
         else:
             prompt.append(line)
     return \
-        "\n".join(prompt), \
+        "\n".join(preamble + prompt), \
         "\n".join(system) if system else None
 
 def clear():
