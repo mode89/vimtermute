@@ -1,0 +1,218 @@
+# pylint: disable=missing-docstring
+
+import json
+import os
+import urllib.request
+import urllib.parse
+
+import vim # pylint: disable=import-error
+
+CHAT_BUFFER_NAME = "[VimtermuteChat]"
+ASK_BUFFER_NAME = "[VimtermuteAsk]"
+
+def chat():
+    if getattr(chat, "buffer", None) is None:
+        vim.command(f"split {CHAT_BUFFER_NAME}")
+        vim.command("setlocal buftype=nofile")
+        vim.command("setlocal bufhidden=hide")
+        vim.command("setlocal noswapfile")
+        vim.command("setlocal nomodifiable")
+        vim.command("setlocal filetype=markdown")
+        vim.command("setlocal conceallevel=2")
+        vim.command("nnoremap <buffer> i :python3 vimtermute.ask()<CR>")
+        vim.command("nnoremap <buffer> <leader>c :python3 vimtermute.clear()<CR>")
+
+        chat.buffer = vim.current.buffer
+        chat.history = []
+    else:
+        window = buffer_window(chat.buffer.number)
+        if window is not None:
+            # Close the chat window if it is open
+            vim.current.window = window
+            vim.command("close")
+        else:
+            vim.command("split")
+            vim.current.buffer = chat.buffer
+
+def ask():
+    ask_buffer = None
+    for buffer in vim.buffers:
+        if buffer.name.endswith(ASK_BUFFER_NAME):
+            ask_buffer = buffer
+            break
+
+    if ask_buffer is not None:
+        window = buffer_window(ask_buffer.number)
+        if window is not None:
+            vim.current.window = window
+            return
+
+    vim.command(f"belowright new {ASK_BUFFER_NAME}")
+    vim.command("setlocal buftype=nofile")
+    vim.command("setlocal bufhidden=wipe")
+    vim.command("setlocal noswapfile")
+    vim.command("setlocal filetype=markdown")
+    vim.command("nnoremap <buffer> <CR> :python3 vimtermute.ask_finish()<CR>")
+    vim.command("startinsert")
+
+def ask_finish():
+    ask.finish = None
+    prompt_raw = "\n".join(vim.current.buffer[:]).strip()
+    prompt = compose_prompt(prompt_raw)
+    vim.command("bwipeout")
+
+    # If the prompt is empty, do nothing
+    if prompt_raw == "":
+        return
+
+    # Bring up the chat window
+    if getattr(chat, "buffer", None) is None:
+        chat()
+    chat_window = buffer_window(chat.buffer.number)
+    if chat_window is not None:
+        vim.current.window = chat_window
+    else:
+        vim.command("split")
+        vim.current.buffer = chat.buffer
+
+    # Compile the chat history for the model
+    messages = []
+    for entry in chat.history:
+        messages.append({
+            "role": "user",
+            "content": entry["prompt"],
+        })
+        messages.append({
+            "role": "assistant",
+            "content": entry["response"],
+        })
+    messages.append({
+        "role": "user",
+        "content": prompt,
+    })
+
+    # Call the model
+    response = call_gemini({
+        "messages": messages,
+    })
+
+    # Append the prompt and response to the chat history
+    chat.history.append({
+        "prompt_raw": prompt_raw,
+        "prompt": prompt,
+        "response": response,
+    })
+
+    # Append the prompt and response to the chat buffer
+    chat.buffer.options["modifiable"] = True
+    chat.buffer.append("#### User " + "-" * 65)
+    chat.buffer.append("")
+    for line in prompt_raw.split("\n"):
+        chat.buffer.append(line)
+    chat.buffer.append("")
+    chat.buffer.append("#### Vimtermute " + "-" * 63)
+    chat.buffer.append("")
+    for line in response.split("\n"):
+        chat.buffer.append(line)
+    chat.buffer.append("")
+    chat.buffer.options["modifiable"] = False
+
+    # Scroll to the bottom of the chat buffer
+    vim.command("normal G")
+
+def compose_prompt(raw_prompt):
+    prompt = []
+    for line in raw_prompt.split("\n"):
+        if line.startswith("@"):
+            if line.startswith("@buffer"):
+                buffers = visible_buffers()
+                if len(buffers) == 0: # pylint: disable=no-else-raise
+                    raise ValueError("Using @buffer, but no buffers open")
+                elif len(buffers) > 1:
+                    raise ValueError(
+                        "Using @buffer, but multiple buffers open")
+                else:
+                    buffer = buffers[0]
+                    prompt = [
+                        "Here is the content of the current buffer:",
+                        "",
+                        "```",
+                    ] + buffer[:] + [
+                        "```",
+                        "",
+                    ] + prompt
+            else:
+                raise ValueError("Invalid @ directive")
+        else:
+            prompt.append(line)
+    return "\n".join(prompt)
+
+def clear():
+    chat.buffer.options["modifiable"] = True
+    chat.buffer[:] = []
+    chat.buffer.options["modifiable"] = False
+    chat.history = []
+
+def visible_buffers():
+    buffers = set()
+
+    for window in vim.windows:
+        wname = window.buffer.name
+        if not wname.endswith(CHAT_BUFFER_NAME) and \
+           not wname.endswith(ASK_BUFFER_NAME):
+            buffers.add(window.buffer)
+
+    return list(buffers)
+
+def attach_line_numbers(lines):
+    width = len(str(len(lines)))
+    return ([
+        f"{i+1:>{width}} {line}"
+        for i, line in enumerate(lines)
+    ])
+
+def call_gemini(call):
+    rolls = {
+        "user": "user",
+        "assistant": "model",
+    }
+
+    # Convert contents to the format expected by Gemini API
+    contents = []
+    for message in call["messages"]:
+        contents.append({
+            "role": rolls[message["role"]],
+            "parts": [{
+                "text": message["content"],
+            }],
+        })
+
+    data = {
+        "contents": contents,
+    }
+    if "system" in call:
+        data["system_instruction"] = {
+            "parts": [{
+                "text": call["system"],
+            }],
+        }
+
+    key = os.environ["GEMINI_API_KEY"]
+
+    req = urllib.request.Request(
+        url="https://generativelanguage.googleapis.com/v1beta/models/" +
+            f"gemini-2.0-flash:generateContent?key={key}",
+        data=json.dumps(data).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json"
+        })
+
+    with urllib.request.urlopen(req) as response:
+        data = json.load(response)
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+def buffer_window(buffer_number):
+    for window in vim.windows:
+        if window.buffer.number == buffer_number:
+            return window
+    return None
