@@ -134,7 +134,7 @@ def ask_finish():
     # Scroll to the bottom of the chat buffer
     vim.command("normal G")
 
-def compose_prompt(raw_prompt):
+def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
     system = []
     prompt = []
     for line in raw_prompt.split("\n"):
