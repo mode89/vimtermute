@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import urllib.request
 import urllib.parse
@@ -166,7 +167,7 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
                         "```",
                         "",
                     ]
-            elif line.startswith("@git:staged"):
+            elif re.match(r"@git\s+staged", line):
                 try:
                     diff = subprocess.check_output(
                         ["git", "diff", "--staged"],
@@ -183,7 +184,7 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
                         ]
                     else:
                         raise ValueError(
-                            "Using @git:staged, but no changes staged")
+                            "Using `@git staged`, but no changes staged")
                 except subprocess.CalledProcessError as ex:
                     raise RuntimeError("Git command failed") from ex
             else:
