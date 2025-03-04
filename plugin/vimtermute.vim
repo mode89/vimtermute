@@ -10,5 +10,9 @@ sys.path.append(str(PLUGIN_ROOT / "python"))
 import vimtermute
 EOF
 
+function! VimtermuteDoAsyncCall(timer)
+    python3 vimtermute.do_async_call()
+endfunction
+
 command! -nargs=0 VimtermuteChat :python3 vimtermute.chat()
 command! -nargs=0 VimtermuteAsk :python3 vimtermute.ask()

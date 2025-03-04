@@ -5,10 +5,13 @@ import json
 import os
 import re
 import subprocess
+import threading
 import urllib.request
 import urllib.parse
 
 import vim # pylint: disable=import-error
+
+IS_NEOVIM = hasattr(vim, "api")
 
 CHAT_BUFFER_NAME = "[VimtermuteChat]"
 ASK_BUFFER_NAME = "[VimtermuteAsk]"
@@ -118,35 +121,59 @@ def ask_finish():
         "content": prompt,
     })
 
-    # Call the model
-    response = call_gemini({
-        "messages": messages,
-        "system": system,
-    })
-
-    # Append the prompt and response to the chat history
-    chat.history.append({
-        "prompt_raw": prompt_raw,
-        "prompt": prompt,
-        "response": response,
-    })
-
-    # Append the prompt and response to the chat buffer
     chat.buffer.options["modifiable"] = True
-    chat.buffer.append("#### User " + "-" * 65)
-    chat.buffer.append("")
-    for line in prompt_raw.split("\n"):
-        chat.buffer.append(line)
-    chat.buffer.append("")
-    chat.buffer.append("#### Vimtermute " + "-" * 59)
-    chat.buffer.append("")
-    for line in response.split("\n"):
-        chat.buffer.append(line)
-    chat.buffer.append("")
+    chat.buffer.append([
+        "#### User " + "-" * 65,
+        "",
+        *prompt_raw.split("\n"),
+        "",
+        "#### Vimtermute " + "-" * 59,
+        "",
+        "",
+        "Thinking ...",
+        "",
+    ])
     chat.buffer.options["modifiable"] = False
+    scroll_to_bottom(chat.buffer)
 
-    # Scroll to the bottom of the chat buffer
-    vim.command("normal G")
+    def response_thread():
+        # Call the model
+        response_stream = call_gemini({
+            "messages": messages,
+            "system": system,
+            "stream": True,
+        })
+
+        def append_to_chat(lines, thinking=True):
+            # Append the prompt and response to the chat buffer
+            chat.buffer.options["modifiable"] = True
+            chat.buffer[-3:] = [*lines, "", "Thinking ...", ""] \
+                if thinking else lines
+            chat.buffer.options["modifiable"] = False
+            scroll_to_bottom(chat.buffer)
+            vim.command("redraw!")
+
+        response = ""
+        last_line = ""
+        for part in response_stream:
+            response += part
+            plines = part.split("\n")
+            if len(plines) == 1:
+                last_line += part
+            else:
+                complete_lines = [last_line + plines[0]] + plines[1:-1]
+                last_line = plines[-1]
+                async_call(append_to_chat, complete_lines)
+        async_call(append_to_chat, [last_line], False)
+
+        # Append the prompt and response to the chat history
+        chat.history.append({
+            "prompt_raw": prompt_raw,
+            "prompt": prompt,
+            "response": response,
+        })
+
+    threading.Thread(target=response_thread).start()
 
 def compose_prompt(raw_prompt):
     system = []
@@ -288,6 +315,7 @@ def attach_line_numbers(lines):
     ])
 
 def call_gemini(call):
+    streaming = call.get("stream", False)
     rolls = {
         "user": "user",
         "assistant": "model",
@@ -313,22 +341,52 @@ def call_gemini(call):
             }],
         }
 
+    method = "streamGenerateContent" if streaming else "generateContent"
+    sse = "alt=sse&" if streaming else ""
     key = os.environ["GEMINI_API_KEY"]
 
     req = urllib.request.Request(
         url="https://generativelanguage.googleapis.com/v1beta/models/" +
-            f"gemini-2.0-flash:generateContent?key={key}",
+            f"gemini-2.0-flash:{method}?{sse}key={key}",
         data=json.dumps(data).encode("utf-8"),
         headers={
             "Content-Type": "application/json"
         })
 
     with urllib.request.urlopen(req) as response:
-        data = json.load(response)
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        if streaming:
+            for line in response:
+                if line.startswith(b"data:"):
+                    data = json.loads(line[5:])
+                    yield data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            data = json.load(response)
+            yield data["candidates"][0]["content"]["parts"][0]["text"]
 
 def buffer_window(buffer_number):
     for window in vim.windows:
         if window.buffer.number == buffer_number:
             return window
     return None
+
+def scroll_to_bottom(buffer):
+    window = buffer_window(buffer.number)
+    if window is not None:
+        line = len(buffer)
+        window.cursor = (line, 0)
+
+def async_call(func, *args):
+    if hasattr(do_async_call, "queue"):
+        do_async_call.queue.append((func, args))
+    else:
+        do_async_call.queue = [(func, args)]
+
+    if IS_NEOVIM:
+        vim.async_call(do_async_call)
+    else:
+        vim.eval("timer_start(1, 'VimtermuteDoAsyncCall')")
+
+def do_async_call():
+    if hasattr(do_async_call, "queue"):
+        func, args = do_async_call.queue.pop(0)
+        func(*args)
