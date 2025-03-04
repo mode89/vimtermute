@@ -16,8 +16,11 @@ CODE_SYSTEM_PROMPT = """
 You are an AI programming assistant.
 
 When asked to generate code, output only those parts of the code that are
-relevant to the user's request and need to be modified. Do not output
+relevant to the user's request and need to be modified. DO NOT output
 entire files unless asked to do so.
+
+DO NOT output diff patches unless asked to do so. Instead, output
+the code as it should be after the change.
 """
 
 COMMIT_PROMPT = """
