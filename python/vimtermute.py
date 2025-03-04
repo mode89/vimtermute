@@ -1,5 +1,6 @@
 # pylint: disable=missing-docstring
 
+import glob
 import json
 import os
 import re
@@ -167,6 +168,31 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
                         "",
                         "```",
                     ] + buffer[:] + [
+                        "```",
+                        "",
+                    ]
+            elif re.match(r"@files\s*(.*)", line):
+                pattern = re.match(r"@files\s*(.*)", line).group(1).strip()
+                # Default to all files in current directory
+                if not pattern:
+                    pattern = "**/*"
+                files = glob.glob(pattern, recursive=True)
+                files = [f for f in files if os.path.isfile(f)]
+                if not files:
+                    raise ValueError(
+                        f"No files found matching pattern `{pattern}`")
+                for file in sorted(files):
+                    try:
+                        with open(file, "r", encoding="utf-8") as f:
+                            content = f.read()
+                    except Exception as ex:
+                        raise RuntimeError(
+                            f"Failed to read file `{file}`") from ex
+                    preamble = preamble + [
+                        f"Here is the content of the file `{file}`:",
+                        "",
+                        "```",
+                        content,
                         "```",
                         "",
                     ]
