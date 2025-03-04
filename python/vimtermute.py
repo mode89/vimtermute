@@ -148,74 +148,18 @@ def ask_finish():
     # Scroll to the bottom of the chat buffer
     vim.command("normal G")
 
-def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
+def compose_prompt(raw_prompt):
     system = []
     prompt = []
     preamble = []
     for line in raw_prompt.split("\n"):
         if line.startswith("@"):
             if line.startswith("@buffer"):
-                buffers = visible_buffers()
-                if len(buffers) == 0: # pylint: disable=no-else-raise
-                    raise ValueError("Using @buffer, but no buffers open")
-                elif len(buffers) > 1:
-                    raise ValueError(
-                        "Using @buffer, but multiple buffers open")
-                else:
-                    buffer = buffers[0]
-                    preamble = preamble + [
-                        "Here is the content of the current buffer:",
-                        "",
-                        "```",
-                    ] + buffer[:] + [
-                        "```",
-                        "",
-                    ]
-            elif re.match(r"@files\s*(.*)", line):
-                pattern = re.match(r"@files\s*(.*)", line).group(1).strip()
-                # Default to all files in current directory
-                if not pattern:
-                    pattern = "**/*"
-                files = glob.glob(pattern, recursive=True)
-                files = [f for f in files if os.path.isfile(f)]
-                if not files:
-                    raise ValueError(
-                        f"No files found matching pattern `{pattern}`")
-                for file in sorted(files):
-                    try:
-                        with open(file, "r", encoding="utf-8") as f:
-                            content = f.read()
-                    except Exception as ex:
-                        raise RuntimeError(
-                            f"Failed to read file `{file}`") from ex
-                    preamble = preamble + [
-                        f"Here is the content of the file `{file}`:",
-                        "",
-                        "```",
-                        content,
-                        "```",
-                        "",
-                    ]
-            elif re.match(r"@git\s+staged", line):
-                try:
-                    diff = subprocess.check_output(
-                        ["git", "diff", "--staged"],
-                        universal_newlines=True
-                    ).strip()
-                    if diff:
-                        preamble = preamble + [
-                            "Here are the changes staged for commit:",
-                            "",
-                            "```diff",
-                            diff,
-                            "```",
-                            "",
-                        ]
-                    else:
-                        raise ValueError(
-                            "Using `@git staged`, but no changes staged")
-                except subprocess.CalledProcessError as ex:
-                    raise RuntimeError("Git command failed") from ex
+                preamble = attach_buffer(preamble)
+            elif re.match(r"@files\s*.*", line):
+                preamble = attach_files(preamble, line)
+            elif re.match(r"@git\s*.*", line):
+                preamble = attach_git(preamble, line)
             else:
                 raise ValueError(f"Invalid @ directive: {line}")
         elif line.startswith("/"):
@@ -231,6 +175,81 @@ def compose_prompt(raw_prompt): # pylint: disable=too-many-branches
     return \
         "\n".join(preamble + prompt), \
         "\n".join(system) if system else None
+
+def attach_buffer(preamble):
+    buffers = visible_buffers()
+    if len(buffers) == 0: # pylint: disable=no-else-raise
+        raise ValueError("Using @buffer, but no buffers open")
+    elif len(buffers) > 1:
+        raise ValueError(
+            "Using @buffer, but multiple buffers open")
+    else:
+        buffer = buffers[0]
+        preamble = preamble + [
+            "Here is the content of the current buffer:",
+            "",
+            "```",
+        ] + buffer[:] + [
+            "```",
+            "",
+        ]
+    return preamble
+
+def attach_files(preamble, line):
+    pattern = re.match(r"@files\s*(.*)", line).group(1).strip()
+
+    # Default to all files in current directory
+    if not pattern:
+        pattern = "**/*"
+    files = glob.glob(pattern, recursive=True)
+    files = [f for f in files if os.path.isfile(f)]
+    if not files:
+        raise ValueError(
+            f"No files found matching pattern `{pattern}`")
+
+    for file in sorted(files):
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as ex:
+            raise RuntimeError(
+                f"Failed to read file `{file}`") from ex
+
+        preamble = preamble + [
+            f"Here is the content of the file `{file}`:",
+            "",
+            "```",
+            content,
+            "```",
+            "",
+        ]
+    return preamble
+
+def attach_git(preamble, line):
+    if re.match(r"@git\s+staged", line):
+        try:
+            diff = subprocess.check_output(
+                ["git", "diff", "--staged"],
+                universal_newlines=True
+            ).strip()
+        except subprocess.CalledProcessError as ex:
+            raise RuntimeError("Git command failed") from ex
+
+        if diff:
+            preamble = preamble + [
+                "Here are the changes staged for commit:",
+                "",
+                "```diff",
+                diff,
+                "```",
+                "",
+            ]
+        else:
+            raise ValueError(
+                "Using `@git staged`, but no changes staged")
+    else:
+        raise ValueError(f"Invalid @git directive: {line}")
+    return preamble
 
 def clear():
     chat.buffer.options["modifiable"] = True
