@@ -363,6 +363,34 @@ def call_gemini(call):
             data = json.load(response)
             yield data["candidates"][0]["content"]["parts"][0]["text"]
 
+def call_ollama(call):
+    streaming = call.get("stream", False)
+
+    data = {
+        "model": "llama3.1:8b",
+        "messages": call["messages"],
+        "stream": streaming,
+        "options": {
+            "num_ctx": 10000,
+        },
+    }
+    if "system" in call and call["system"]:
+        data["system"] = call["system"]
+
+    req = urllib.request.Request(
+        url="http://localhost:11434/api/chat",
+        data=json.dumps(data).encode("utf-8"),
+    )
+
+    with urllib.request.urlopen(req) as response:
+        if streaming:
+            for line in response:
+                data = json.loads(line)
+                yield data["message"]["content"]
+        else:
+            data = json.load(response)
+            yield data["message"]["content"]
+
 def buffer_window(buffer_number):
     for window in vim.windows:
         if window.buffer.number == buffer_number:
