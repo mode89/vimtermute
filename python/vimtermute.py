@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import threading
+from types import SimpleNamespace
 import urllib.request
 import urllib.parse
 
@@ -38,6 +39,11 @@ CHAT_INTRO = """
 # This is the Vimtermute chat window. Press 'i' to enter a prompt.
 """
 
+state = SimpleNamespace(
+    history=[],
+    thinking=False,
+)
+
 def chat():
     buffer, window = find_visible_buffer(r".*VimtermuteChat")
     if buffer is not None:
@@ -46,10 +52,6 @@ def chat():
         vim.command("bwipeout")
     else:
         buffer, window = make_chat_buffer()
-
-        if not hasattr(chat, "history"):
-            chat.history = []
-
         update_chat_buffer(buffer, render_chat())
 
 def make_chat_buffer():
@@ -78,11 +80,11 @@ def update_chat_buffer(buffer, lines):
         vim.command("echom 'Error updating chat buffer'")
 
 def render_chat():
-    if hasattr(chat, "history") and chat.history:
-        lines = render_history(chat.history)
+    if state.history:
+        lines = render_history(state.history)
     else:
         lines = CHAT_INTRO.split("\n")
-    if getattr(chat, "thinking", False):
+    if state.thinking:
         lines.append("Thinking ...")
     return lines
 
@@ -102,7 +104,7 @@ def render_history(history):
     return lines
 
 def ask():
-    if getattr(chat, "thinking", False):
+    if state.thinking:
         vim.command("echom 'Cannot ask while Vimtermute is thinking'")
         return
 
@@ -129,14 +131,12 @@ def ask_finish():
     if prompt_raw == "":
         return
 
-    if not hasattr(chat, "history"):
-        chat.history = []
-    chat.history.append({
+    state.history.append({
         "prompt_raw": prompt_raw,
         "prompt": prompt,
         "response": "",
     })
-    chat.thinking = True
+    state.thinking = True
 
     # Bring up the chat window
     cbuffer, cwindow = find_visible_buffer(r".*VimtermuteChat")
@@ -150,7 +150,7 @@ def ask_finish():
 def response_thread(system, prompt):
     # Compile the chat history for the model
     messages = []
-    for entry in chat.history[:-1]:
+    for entry in state.history[:-1]:
         messages.append({
             "role": "user",
             "content": entry["prompt"],
@@ -165,13 +165,13 @@ def response_thread(system, prompt):
     })
 
     def update_response(part):
-        chat.history[-1]["response"] += part
+        state.history[-1]["response"] += part
         buffer, _ = find_visible_buffer(r".*VimtermuteChat")
         if buffer is not None:
             update_chat_buffer(buffer, render_chat())
 
     def finalize():
-        chat.thinking = False
+        state.thinking = False
         buffer, _ = find_visible_buffer(r".*VimtermuteChat")
         if buffer is not None:
             update_chat_buffer(buffer, render_chat())
@@ -351,22 +351,22 @@ def attach_git(preamble, line):
     return preamble
 
 def clear():
-    if getattr(chat, "thinking", False):
+    if state.thinking:
         vim.command("echom 'Cannot clear chat while Vimtermute is thinking'")
         return
 
     # Dump the chat log to a file
-    if hasattr(chat, "history") and chat.history:
+    if state.history:
         with open(".vimtermute.log", "a", encoding="utf-8") as log:
             log.write("*" * 80 + "\n\n")
-            for entry in chat.history:
+            for entry in state.history:
                 log.write("--- User " + "-" * 65 + "\n\n")
                 log.write(entry["prompt_raw"] + "\n\n")
                 log.write("--- Vimtermute " + "-" * 59 + "\n\n")
                 log.write(entry["response"] + "\n\n")
             log.write("\n")
 
-    chat.history = []
+    state.history = []
 
     buffer, _ = find_visible_buffer(r".*VimtermuteChat")
     if buffer is not None:
@@ -441,9 +441,10 @@ def call_gemini(call):
 
 def find_visible_buffer(pattern):
     for window in vim.windows:
-        buffer = window.buffer
-        if re.match(pattern, buffer.name):
-            return buffer, window
+        if window.valid:
+            buffer = window.buffer
+            if re.match(pattern, buffer.name):
+                return buffer, window
     return None, None
 
 def buffer_window(buffer_number):
