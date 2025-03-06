@@ -38,44 +38,72 @@ CHAT_INTRO = """
 # This is the Vimtermute chat window. Press 'i' to enter a prompt.
 """
 
-
 def chat():
-    if getattr(chat, "buffer", None) is None:
-        vim.command(f"split {CHAT_BUFFER_NAME}")
-        vim.command("setlocal buftype=nofile")
-        vim.command("setlocal bufhidden=hide")
-        vim.command("setlocal noswapfile")
-        vim.command("setlocal filetype=markdown")
-        vim.command("setlocal conceallevel=2")
-        vim.command("nnoremap <buffer> i :python3 vimtermute.ask()<CR>")
-        vim.command("nnoremap <buffer> <leader>cl :python3 vimtermute.clear()<CR>")
-
-        chat.buffer = vim.current.buffer
-        chat.buffer[:] = CHAT_INTRO.split("\n")
-        chat.buffer.options["modifiable"] = False
-        chat.history = []
+    buffer, window = find_visible_buffer(r".*VimtermuteChat")
+    if buffer is not None:
+        # Close the chat window if it is open
+        vim.current.window = window
+        vim.command("bwipeout")
     else:
-        window = buffer_window(chat.buffer.number)
-        if window is not None:
-            # Close the chat window if it is open
-            vim.current.window = window
-            vim.command("close")
-        else:
-            vim.command("split")
-            vim.current.buffer = chat.buffer
+        buffer, window = make_chat_buffer()
+
+        if not hasattr(chat, "history"):
+            chat.history = []
+
+        update_chat_buffer(buffer, render_chat())
+
+def make_chat_buffer():
+    vim.command(f"split {CHAT_BUFFER_NAME}")
+    vim.command("setlocal buftype=nofile")
+    vim.command("setlocal bufhidden=wipe")
+    vim.command("setlocal noswapfile")
+    vim.command("setlocal filetype=markdown")
+    vim.command("setlocal conceallevel=2")
+    vim.command("nnoremap <buffer> i :python3 vimtermute.ask()<CR>")
+    vim.command("nnoremap <buffer> <leader>cl :python3 vimtermute.clear()<CR>")
+    vim.command("setlocal nomodifiable")
+    return vim.current.buffer, vim.current.window
+
+def update_chat_buffer(buffer, lines):
+    buffer.options["modifiable"] = True
+    buffer[:] = lines
+    buffer.options["modifiable"] = False
+    window = buffer_window(buffer.number)
+    window.cursor = (len(lines), 0)
+
+def render_chat():
+    if hasattr(chat, "history") and chat.history:
+        lines = render_history(chat.history)
+    else:
+        lines = CHAT_INTRO.split("\n")
+    if getattr(chat, "thinking", False):
+        lines.append("Thinking ...")
+    return lines
+
+def render_history(history):
+    lines = []
+    for entry in history:
+        lines.extend([
+            "#### User " + "-" * 65,
+            "",
+            *entry["prompt_raw"].split("\n"),
+            "",
+            "#### Vimtermute " + "-" * 59,
+            "",
+            *entry["response"].split("\n"),
+            "",
+        ])
+    return lines
 
 def ask():
-    ask_buffer = None
-    for buffer in vim.buffers:
-        if buffer.name.endswith(ASK_BUFFER_NAME):
-            ask_buffer = buffer
-            break
+    if getattr(chat, "thinking", False):
+        vim.command("echom 'Cannot ask while Vimtermute is thinking'")
+        return
 
-    if ask_buffer is not None:
-        window = buffer_window(ask_buffer.number)
-        if window is not None:
-            vim.current.window = window
-            return
+    buffer, window = find_visible_buffer(r".*VimtermuteAsk")
+    if buffer is not None:
+        vim.current.window = window
+        return
 
     vim.command(f"belowright new {ASK_BUFFER_NAME}")
     vim.command("setlocal buftype=nofile")
@@ -95,19 +123,28 @@ def ask_finish():
     if prompt_raw == "":
         return
 
-    # Bring up the chat window
-    if getattr(chat, "buffer", None) is None:
-        chat()
-    chat_window = buffer_window(chat.buffer.number)
-    if chat_window is not None:
-        vim.current.window = chat_window
-    else:
-        vim.command("split")
-        vim.current.buffer = chat.buffer
+    if not hasattr(chat, "history"):
+        chat.history = []
+    chat.history.append({
+        "prompt_raw": prompt_raw,
+        "prompt": prompt,
+        "response": "",
+    })
+    chat.thinking = True
 
+    # Bring up the chat window
+    cbuffer, cwindow = find_visible_buffer(r".*VimtermuteChat")
+    if cbuffer is None:
+        cbuffer, cwindow = make_chat_buffer()
+    update_chat_buffer(cbuffer, render_chat())
+    vim.current.window = cwindow
+
+    threading.Thread(target=response_thread, args=(system, prompt)).start()
+
+def response_thread(system, prompt):
     # Compile the chat history for the model
     messages = []
-    for entry in chat.history:
+    for entry in chat.history[:-1]:
         messages.append({
             "role": "user",
             "content": entry["prompt"],
@@ -121,22 +158,19 @@ def ask_finish():
         "content": prompt,
     })
 
-    chat.buffer.options["modifiable"] = True
-    chat.buffer.append([
-        "#### User " + "-" * 65,
-        "",
-        *prompt_raw.split("\n"),
-        "",
-        "#### Vimtermute " + "-" * 59,
-        "",
-        "",
-        "Thinking ...",
-        "",
-    ])
-    chat.buffer.options["modifiable"] = False
-    scroll_to_bottom(chat.buffer)
+    def update_response(part):
+        chat.history[-1]["response"] += part
+        buffer, _ = find_visible_buffer(r".*VimtermuteChat")
+        if buffer is not None:
+            update_chat_buffer(buffer, render_chat())
 
-    def response_thread():
+    def finalize():
+        chat.thinking = False
+        buffer, _ = find_visible_buffer(r".*VimtermuteChat")
+        if buffer is not None:
+            update_chat_buffer(buffer, render_chat())
+
+    try:
         # Call the model
         response_stream = call_gemini({
             "messages": messages,
@@ -144,36 +178,10 @@ def ask_finish():
             "stream": True,
         })
 
-        def append_to_chat(lines, thinking=True):
-            # Append the prompt and response to the chat buffer
-            chat.buffer.options["modifiable"] = True
-            chat.buffer[-3:] = [*lines, "", "Thinking ...", ""] \
-                if thinking else lines
-            chat.buffer.options["modifiable"] = False
-            scroll_to_bottom(chat.buffer)
-            vim.command("redraw!")
-
-        response = ""
-        last_line = ""
         for part in response_stream:
-            response += part
-            plines = part.split("\n")
-            if len(plines) == 1:
-                last_line += part
-            else:
-                complete_lines = [last_line + plines[0]] + plines[1:-1]
-                last_line = plines[-1]
-                async_call(append_to_chat, complete_lines)
-        async_call(append_to_chat, [last_line], False)
-
-        # Append the prompt and response to the chat history
-        chat.history.append({
-            "prompt_raw": prompt_raw,
-            "prompt": prompt,
-            "response": response,
-        })
-
-    threading.Thread(target=response_thread).start()
+            async_call(update_response, part)
+    finally:
+        async_call(finalize)
 
 def compose_prompt(raw_prompt):
     system = []
@@ -300,9 +308,9 @@ def attach_git(preamble, line):
     return preamble
 
 def clear():
-    chat.buffer.options["modifiable"] = True
-    chat.buffer[:] = CHAT_INTRO.split("\n")
-    chat.buffer.options["modifiable"] = False
+    if getattr(chat, "thinking", False):
+        vim.command("echom 'Cannot clear chat while Vimtermute is thinking'")
+        return
 
     # Dump the chat log to a file
     if hasattr(chat, "history") and chat.history:
@@ -316,6 +324,10 @@ def clear():
             log.write("\n")
 
     chat.history = []
+
+    buffer, _ = find_visible_buffer(r".*VimtermuteChat")
+    if buffer is not None:
+        update_chat_buffer(buffer, render_chat())
 
 def visible_buffers():
     buffers = set()
@@ -384,17 +396,18 @@ def call_gemini(call):
             data = json.load(response)
             yield data["candidates"][0]["content"]["parts"][0]["text"]
 
+def find_visible_buffer(pattern):
+    for window in vim.windows:
+        buffer = window.buffer
+        if re.match(pattern, buffer.name):
+            return buffer, window
+    return None, None
+
 def buffer_window(buffer_number):
     for window in vim.windows:
         if window.buffer.number == buffer_number:
             return window
     return None
-
-def scroll_to_bottom(buffer):
-    window = buffer_window(buffer.number)
-    if window is not None:
-        line = len(buffer)
-        window.cursor = (line, 0)
 
 def async_call(func, *args):
     if hasattr(do_async_call, "queue"):
