@@ -253,7 +253,28 @@ def attach_files(preamble, line):
     return preamble
 
 def attach_git(preamble, line):
-    if re.match(r"@git\s+staged", line):
+    if re.match(r"@git\s+diff", line):
+        try:
+            diff = subprocess.check_output(
+                ["git", "diff"],
+                universal_newlines=True
+            ).strip()
+        except subprocess.CalledProcessError as ex:
+            raise RuntimeError("Git command failed") from ex
+
+        if diff:
+            preamble = preamble + [
+                "Here are the current changes:",
+                "",
+                "```diff",
+                diff,
+                "```",
+                "",
+            ]
+        else:
+            raise ValueError(
+                "Using `@git diff`, but no changes found")
+    elif re.match(r"@git\s+staged", line):
         try:
             diff = subprocess.check_output(
                 ["git", "diff", "--staged"],
