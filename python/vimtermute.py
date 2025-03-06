@@ -36,8 +36,8 @@ Use imperatiive mood.
 """
 
 CHAT_INTRO = """
-# This is the Vimtermute chat window. Press 'i' to enter a prompt.
-"""
+# # This is the Vimtermute chat window.
+# """
 
 state = SimpleNamespace(
     history=[],
@@ -61,8 +61,6 @@ def make_chat_buffer():
     vim.command("setlocal noswapfile")
     vim.command("setlocal filetype=markdown")
     vim.command("setlocal conceallevel=2")
-    vim.command("nnoremap <buffer> i :python3 vimtermute.ask()<CR>")
-    vim.command("nnoremap <buffer> <leader>cl :python3 vimtermute.clear()<CR>")
     vim.command("setlocal nomodifiable")
     return vim.current.buffer, vim.current.window
 
