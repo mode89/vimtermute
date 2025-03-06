@@ -96,11 +96,25 @@ def render_history(history):
             "",
             *entry["prompt_raw"].split("\n"),
             "",
-            "#### Vimtermute " + "-" * 59,
-            "",
-            *entry["response"].split("\n"),
-            "",
         ])
+
+        responses = entry["responses"]
+        if len(responses) == 1:
+            lines.extend([
+                "#### Vimtermute " + "-" * 59,
+                "",
+                *responses[0].split("\n"),
+                "",
+            ])
+        else:
+            rnum = len(responses)
+            for i, response in enumerate(responses):
+                lines.extend([
+                    f"#### Vimtermute {i+1}/{rnum} " + "-" * 53,
+                    "",
+                    *response.split("\n"),
+                    "",
+                ])
     return lines
 
 def ask():
@@ -133,7 +147,7 @@ def ask_finish():
     state.history.append({
         "prompt_raw": prompt_raw,
         "prompt": prompt,
-        "response": "",
+        "responses": [""],
     })
     state.thinking = True
 
@@ -156,7 +170,7 @@ def response_thread(system, prompt):
         })
         messages.append({
             "role": "assistant",
-            "content": entry["response"],
+            "content": entry["responses"][-1],
         })
     messages.append({
         "role": "user",
@@ -164,7 +178,7 @@ def response_thread(system, prompt):
     })
 
     def update_response(part):
-        state.history[-1]["response"] += part
+        state.history[-1]["responses"][-1] += part
         buffer, _ = find_visible_buffer(r".*VimtermuteChat")
         if buffer is not None:
             update_chat_buffer(buffer, render_chat())
@@ -361,8 +375,16 @@ def clear():
             for entry in state.history:
                 log.write("--- User " + "-" * 65 + "\n\n")
                 log.write(entry["prompt_raw"] + "\n\n")
-                log.write("--- Vimtermute " + "-" * 59 + "\n\n")
-                log.write(entry["response"] + "\n\n")
+                responses = entry["responses"]
+                if len(responses) == 1:
+                    log.write("--- Vimtermute " + "-" * 59 + "\n\n")
+                    log.write(responses[0] + "\n\n")
+                else:
+                    rnum = len(responses)
+                    for i, response in enumerate(responses):
+                        log.write(f"--- Vimtermute {i+1}/{rnum} " +
+                            "-" * 53 + "\n\n")
+                        log.write(response + "\n\n")
             log.write("\n")
 
     state.history = []
@@ -370,6 +392,30 @@ def clear():
     buffer, _ = find_visible_buffer(r".*VimtermuteChat")
     if buffer is not None:
         update_chat_buffer(buffer, render_chat())
+
+def regenerate_last():
+    if state.thinking:
+        vim.command("echom 'Cannot regenerate while Vimtermute is thinking'")
+        return
+
+    if not state.history:
+        # No history to work with
+        return
+
+    prompt_raw = state.history[-1]["prompt_raw"]
+    prompt, system = compose_prompt(prompt_raw)
+
+    state.history[-1]["responses"].append("")
+    state.thinking = True
+
+    # Bring up the chat window
+    cbuffer, cwindow = find_visible_buffer(f".*{CHAT_BUFFER_NAME}")
+    if cbuffer is None:
+        cbuffer, cwindow = make_chat_buffer()
+    update_chat_buffer(cbuffer, render_chat())
+    vim.current.window = cwindow
+
+    threading.Thread(target=response_thread, args=(system, prompt)).start()
 
 def visible_buffers():
     buffers = set()
