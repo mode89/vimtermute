@@ -303,6 +303,43 @@ def attach_git(preamble, line):
         else:
             raise ValueError(
                 "Using `@git staged`, but no changes staged")
+    elif re.match(r"@git\s+files", line):
+        pattern = re.match(r"@git\s+files\s*(.*)", line).group(1).strip()
+        if not pattern:
+            pattern = "**/*"
+
+        try:
+            # Get the list of files tracked by git
+            files = subprocess.check_output(
+                ["git", "ls-files", pattern],
+                universal_newlines=True
+            ).strip().split("\n")
+        except subprocess.CalledProcessError as ex:
+            raise RuntimeError("Git command failed") from ex
+
+        if not files:
+            raise ValueError(
+                f"No tracked files found matching pattern `{pattern}`")
+
+        for file in sorted(files):
+            # Skip directories
+            if not os.path.isfile(file):
+                continue
+
+            try:
+                with open(file, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception as ex:
+                raise RuntimeError(f"Failed to read file `{file}`") from ex
+
+            preamble = preamble + [
+                f"Here is the content of the file `{file}`:",
+                "",
+                "```",
+                content,
+                "```",
+                "",
+            ]
     else:
         raise ValueError(f"Invalid @git directive: {line}")
     return preamble
