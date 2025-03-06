@@ -122,7 +122,6 @@ def ask():
     vim.command("startinsert")
 
 def ask_finish():
-    ask.finish = None
     prompt_raw = "\n".join(vim.current.buffer[:]).strip()
     prompt, system = compose_prompt(prompt_raw)
     vim.command("bwipeout")
