@@ -65,11 +65,17 @@ def make_chat_buffer():
     return vim.current.buffer, vim.current.window
 
 def update_chat_buffer(buffer, lines):
-    buffer.options["modifiable"] = True
-    buffer[:] = lines
-    buffer.options["modifiable"] = False
-    window = buffer_window(buffer.number)
-    window.cursor = (len(lines), 0)
+    # Exception handling is a workaround for a bug in Neovim, where
+    # buffer object becomes invalid even though its python counterpart
+    # is still valid.
+    try:
+        buffer.options["modifiable"] = True
+        buffer[:] = lines
+        buffer.options["modifiable"] = False
+        window = buffer_window(buffer.number)
+        window.cursor = (len(lines), 0)
+    except Exception: # pylint: disable=broad-except
+        vim.command("echom 'Error updating chat buffer'")
 
 def render_chat():
     if hasattr(chat, "history") and chat.history:
