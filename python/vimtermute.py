@@ -119,7 +119,7 @@ def render_history(history):
 
 def ask():
     if state.thinking:
-        vim.command("echom 'Cannot ask while Vimtermute is thinking'")
+        vim.command("echom 'Cannot start new prompt while thinking'")
         return
 
     buffer, window = find_visible_buffer(f".*{ASK_BUFFER_NAME}")
@@ -365,7 +365,7 @@ def attach_git(preamble, line):
 
 def clear():
     if state.thinking:
-        vim.command("echom 'Cannot clear chat while Vimtermute is thinking'")
+        vim.command("echom 'Cannot clear chat while thinking'")
         return
 
     # Dump the chat log to a file
@@ -395,7 +395,7 @@ def clear():
 
 def regenerate_last():
     if state.thinking:
-        vim.command("echom 'Cannot regenerate while Vimtermute is thinking'")
+        vim.command("echom 'Cannot generate new response while thinking'")
         return
 
     if not state.history:
