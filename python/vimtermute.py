@@ -14,8 +14,8 @@ import vim # pylint: disable=import-error
 
 IS_NEOVIM = hasattr(vim, "api")
 
-CHAT_BUFFER_NAME = "[VimtermuteChat]"
-ASK_BUFFER_NAME = "[VimtermuteAsk]"
+CHAT_BUFFER_NAME = r"\[vimtermute-chat\]"
+ASK_BUFFER_NAME = r"\[vimtermute-ask\]"
 
 CODE_SYSTEM_PROMPT = """
 You are an AI programming assistant.
@@ -45,7 +45,7 @@ state = SimpleNamespace(
 )
 
 def chat():
-    buffer, window = find_visible_buffer(r".*VimtermuteChat")
+    buffer, window = find_visible_buffer(f".*{CHAT_BUFFER_NAME}")
     if buffer is not None:
         # Close the chat window if it is open
         vim.current.window = window
@@ -122,7 +122,7 @@ def ask():
         vim.command("echom 'Cannot ask while Vimtermute is thinking'")
         return
 
-    buffer, window = find_visible_buffer(r".*VimtermuteAsk")
+    buffer, window = find_visible_buffer(f".*{ASK_BUFFER_NAME}")
     if buffer is not None:
         vim.current.window = window
         return
@@ -152,7 +152,7 @@ def ask_finish():
     state.thinking = True
 
     # Bring up the chat window
-    cbuffer, cwindow = find_visible_buffer(r".*VimtermuteChat")
+    cbuffer, cwindow = find_visible_buffer(f".*{CHAT_BUFFER_NAME}")
     if cbuffer is None:
         cbuffer, cwindow = make_chat_buffer()
     update_chat_buffer(cbuffer, render_chat())
@@ -179,13 +179,13 @@ def response_thread(system, prompt):
 
     def update_response(part):
         state.history[-1]["responses"][-1] += part
-        buffer, _ = find_visible_buffer(r".*VimtermuteChat")
+        buffer, _ = find_visible_buffer(f".*{CHAT_BUFFER_NAME}")
         if buffer is not None:
             update_chat_buffer(buffer, render_chat())
 
     def finalize():
         state.thinking = False
-        buffer, _ = find_visible_buffer(r".*VimtermuteChat")
+        buffer, _ = find_visible_buffer(f".*{CHAT_BUFFER_NAME}")
         if buffer is not None:
             update_chat_buffer(buffer, render_chat())
 
@@ -389,7 +389,7 @@ def clear():
 
     state.history = []
 
-    buffer, _ = find_visible_buffer(r".*VimtermuteChat")
+    buffer, _ = find_visible_buffer(f".*{CHAT_BUFFER_NAME}")
     if buffer is not None:
         update_chat_buffer(buffer, render_chat())
 
@@ -422,8 +422,9 @@ def visible_buffers():
 
     for window in vim.windows:
         wname = window.buffer.name
-        if not wname.endswith(CHAT_BUFFER_NAME) and \
-           not wname.endswith(ASK_BUFFER_NAME):
+        is_chat = re.match(f".*{CHAT_BUFFER_NAME}", wname)
+        is_ask = re.match(f".*{ASK_BUFFER_NAME}", wname)
+        if not is_chat and not is_ask:
             buffers.add(window.buffer)
 
     return list(buffers)
