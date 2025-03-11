@@ -36,8 +36,8 @@ Use imperatiive mood.
 """
 
 CHAT_INTRO = """
-# # This is the Vimtermute chat window.
-# """
+# This is the Vimtermute chat window.
+"""
 
 state = SimpleNamespace(
     history=[],
