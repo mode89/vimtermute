@@ -512,3 +512,27 @@ def do_async_call():
     if hasattr(do_async_call, "queue"):
         func, args = do_async_call.queue.pop(0)
         func(*args)
+
+class Vector:
+
+    def __init__(self, *items):
+        self._items = list(items)
+
+    def __len__(self):
+        return len(self._items)
+
+    def __getitem__(self, index):
+        return self._items[index]
+
+    def append(self, item):
+        _items = self._items.copy()
+        _items.append(item)
+        return Vector(*_items)
+
+    def assoc(self, *args):
+        _items = self._items.copy()
+        for i in range(0, len(args), 2):
+            index = args[i]
+            value = args[i+1]
+            _items[index] = value
+        return Vector(*_items)
