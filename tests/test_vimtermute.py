@@ -42,3 +42,20 @@ def test_vector():
     assert v3[0] == 4
     assert v3[1] == 2
     assert v3[2] == 5
+
+def test_record():
+    Record = vimtermute.record("Record", "a", "b", "c") # pylint: disable=invalid-name
+
+    r1 = Record(a=1, b=2, c=3)
+    with pytest.raises(AttributeError):
+        r1.a = 4
+    assert r1.a == 1
+    assert r1.b == 2
+    assert r1.c == 3
+    with pytest.raises(AttributeError):
+        assert r1.d == 4
+
+    r2 = r1.assoc(a=4, b=5)
+    assert r2.a == 4
+    assert r2.b == 5
+    assert r2.c == 3
