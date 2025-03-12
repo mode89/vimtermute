@@ -1,10 +1,10 @@
 # pylint: disable=import-error
 # pylint: disable=missing-docstring
 import pytest
-import vimtermute
+from vimtermute.types import Vector, record
 
 def test_vector():
-    v1 = vimtermute.Vector(1, 2, 3)
+    v1 = Vector(1, 2, 3)
     assert len(v1) == 3
     assert v1[0] == 1
     assert v1[1] == 2
@@ -23,7 +23,7 @@ def test_vector():
     assert v1[2] == 3
     with pytest.raises(IndexError):
         assert v1[3] == 4
-    assert isinstance(v2, vimtermute.Vector)
+    assert isinstance(v2, Vector)
     assert len(v2) == 4
     assert v2[0] == 1
     assert v2[1] == 2
@@ -37,14 +37,14 @@ def test_vector():
     assert v1[2] == 3
     with pytest.raises(IndexError):
         assert v1[3] == 4
-    assert isinstance(v3, vimtermute.Vector)
+    assert isinstance(v3, Vector)
     assert len(v3) == 3
     assert v3[0] == 4
     assert v3[1] == 2
     assert v3[2] == 5
 
 def test_record():
-    Record = vimtermute.record("Record", "a", "b", "c") # pylint: disable=invalid-name
+    Record = record("Record", "a", "b", "c") # pylint: disable=invalid-name
 
     r1 = Record(a=1, b=2, c=3)
     with pytest.raises(AttributeError):
